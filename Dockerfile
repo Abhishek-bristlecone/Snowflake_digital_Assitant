@@ -9,7 +9,7 @@ COPY requirements.txt .
 COPY utils.py .
 COPY instructions.txt .
 COPY app.py .
-
+COPY .env .
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
