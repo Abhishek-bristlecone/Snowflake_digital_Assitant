@@ -2,6 +2,10 @@ import os
 import re
 import pandas as pd
 from flask import Flask, request, jsonify
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv()
 
 # Import from utils.py
 from utils import (
@@ -11,6 +15,10 @@ from utils import (
     visual_generate,
     llm
 )
+
+# Get host and port from environment variables
+SERVICE_HOST = os.getenv("HOST", "0.0.0.0")
+SERVICE_PORT = int(os.getenv("PORT", 5000))
 
 app = Flask(__name__)
 
@@ -97,5 +105,5 @@ def query_api():
     })
 
 if __name__ == '__main__':
-    print("Starting Flask server on port 5000...")
-    app.run(host="0.0.0.0", port=5000)
+    print(f"Starting Flask server on {SERVICE_HOST}:{SERVICE_PORT}...")
+    app.run(host=SERVICE_HOST, port=SERVICE_PORT)
