@@ -17,8 +17,8 @@ from utils import (
 )
 
 # Get host and port from environment variables
-SERVICE_HOST = os.getenv("HOST", "0.0.0.0")
-SERVICE_PORT = int(os.getenv("PORT", 5000))
+SERVICE_HOST = os.getenv("SERVICE_HOST", "0.0.0.0")
+SERVICE_PORT = int(os.getenv("SERVICE_PORT", 5000))
 
 app = Flask(__name__)
 
