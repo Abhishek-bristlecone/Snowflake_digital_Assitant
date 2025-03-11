@@ -1,7 +1,7 @@
 import os
 import re
 import pandas as pd
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
 from dotenv import load_dotenv
 import logging
 import os
@@ -113,11 +113,16 @@ def query_api():
         chart_html = ""
 
     logger.debug("Returning final response with results and HTML chart (if any).")
-    return jsonify({
+
+    response_data = jsonify({
         "message": explanation_response,
         "result": result_list,
         "chart_html": chart_html
     })
 
+    logger.debug(f"Sending response: {response_data}")
+    response = make_response({"data": response_data})
+    response.headers['Content-type'] = 'application/json'
+    return response
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=8080)
