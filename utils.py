@@ -8,6 +8,8 @@ import plotly.io as pio
 from dotenv import load_dotenv
 # Use langchain_openai (or langchain_community if preferred)
 from langchain_openai import AzureChatOpenAI
+# from snowflake.snowpark import Session
+# from snowflake.snowpark.exceptions import *
 
 # 1. Load environment variables
 print("Loading environment variables...")
@@ -41,21 +43,55 @@ SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT")
 SNOWFLAKE_WAREHOUSE = os.getenv("SNOWFLAKE_WAREHOUSE")
 SNOWFLAKE_DATABASE = os.getenv("SNOWFLAKE_DATABASE")
 SNOWFLAKE_SCHEMA = os.getenv("SNOWFLAKE_SCHEMA")
+SNOWFLAKE_HOST = os.getenv("SNOWFLAKE_HOST")
+
+
+
+def get_login_token():
+    """
+    Read the login token supplied automatically by Snowflake. These tokens
+    are short lived and should always be read right before creating any new connection.
+    """
+    with open("/snowflake/session/token", "r") as f:
+        return f.read()
+
+
+def get_connection_params():
+    """
+    Construct Snowflake connection params from environment variables.
+    """
+    if os.path.exists("/snowflake/session/token"):
+        return {
+            "account": SNOWFLAKE_ACCOUNT,
+            "host": SNOWFLAKE_HOST,
+            "authenticator": "oauth",
+            "token": get_login_token(),
+            "warehouse": SNOWFLAKE_WAREHOUSE,
+            "database": SNOWFLAKE_DATABASE,
+            "schema": SNOWFLAKE_SCHEMA
+        }
+    else:
+        return {
+            "account": SNOWFLAKE_ACCOUNT,
+            "host": SNOWFLAKE_HOST,
+            "user": SNOWFLAKE_USER,
+            "password": SNOWFLAKE_PASSWORD,
+            "warehouse": SNOWFLAKE_WAREHOUSE,
+            "database": SNOWFLAKE_DATABASE,
+            "schema": SNOWFLAKE_SCHEMA
+        }
+
+
 
 def create_connection():
     """Create a Snowflake connection."""
-    print("Creating Snowflake connection...")
+    # print("Creating Snowflake connection...")
     try:
-        conn = snowflake.connector.connect(
-            user=SNOWFLAKE_USER,
-            password=SNOWFLAKE_PASSWORD,
-            account=SNOWFLAKE_ACCOUNT,
-            warehouse=SNOWFLAKE_WAREHOUSE,
-            database=SNOWFLAKE_DATABASE,
-            schema=SNOWFLAKE_SCHEMA
-        )
-        print("✅ Snowflake connection established!")
+        conn = snowflake.connector.connect(**get_connection_params())
+        # print("✅ Snowflake connection created successfully!")
         return conn
+
+
     except Exception as e:
         print(f"Snowflake Connection Failed: {e}")
         raise
