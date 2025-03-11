@@ -117,11 +117,11 @@ def query_api():
     response_data = jsonify({
         "message": explanation_response,
         "result": result_list,
-        "chart_html": chart_html
+        
     })
 
     logger.debug(f"Sending response: {response_data}")
-    response = make_response({"data": response_data})
+    response = make_response({"data": explanation_response})
     response.headers['Content-type'] = 'application/json'
     return response
 if __name__ == '__main__':
