@@ -24,7 +24,7 @@ def query_api():
     print("Received POST request on /getdata")
 
     data = request.get_json()
-    user_question = data.get("user_question")
+    user_question = data.get("data")
     if not user_question:
         print(" No user_question provided.")
         return jsonify({"message": "No user_question provided", "result": {}}), 400
@@ -43,9 +43,10 @@ def query_api():
     print("Reading system prompt from instructions.txt...")
     with open("instructions.txt", "r", encoding="utf-8") as file:
         system_prompt = file.read().strip()
-
+    for items in user_question:
+        print(items)
     # 4. Combine instructions + user question
-    metadata_prompt = f"{system_prompt}\n\nUser Question:\n{user_question}"
+    metadata_prompt = f"{system_prompt}\n\nUser Question:\n{user_question[1]}"
     print("Generating SQL via LLM...")
     try:
         llm_response = llm.invoke(metadata_prompt).content.strip()
