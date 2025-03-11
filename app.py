@@ -3,7 +3,24 @@ import re
 import pandas as pd
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
+import logging
+import os
+import sys
 
+
+
+def get_logger(logger_name):
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.DEBUG)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(
+        logging.Formatter(
+            '%(name)s [%(asctime)s] [%(levelname)s] %(message)s'))
+    logger.addHandler(handler)
+    return logger
+
+logger = get_logger('echo-service')
 # Load environment variables from .env
 load_dotenv()
 
@@ -21,12 +38,12 @@ app = Flask(__name__)
 
 @app.route('/getdata', methods=['POST'])
 def query_api():
-    print("Received POST request on /getdata")
+    logger.debug("Received POST request on /getdata")
 
     data = request.get_json()
     user_question = data.get("data")
     if not user_question:
-        print(" No user_question provided.")
+        logger.debug(" No user_question provided.")
         return jsonify({"message": "No user_question provided", "result": {}}), 400
 
     # 1. Create Snowflake connection
@@ -35,31 +52,31 @@ def query_api():
     # 2. Retrieve metadata
     snowflake_metadata = get_snowflake_metadata(conn)
     if not snowflake_metadata:
-        print(" Metadata retrieval failed.")
+        logger.debug(" Metadata retrieval failed.")
         conn.close()
         return jsonify({"message": "Metadata retrieval failed.", "result": {}}), 500
 
     # 3. Read system instructions (prompt) from file
-    print("Reading system prompt from instructions.txt...")
+    logger.debug("Reading system prompt from instructions.txt...")
     with open("instructions.txt", "r", encoding="utf-8") as file:
         system_prompt = file.read().strip()
     for items in user_question:
-        print(items)
+        logger.debug(items)
     # 4. Combine instructions + user question
     metadata_prompt = f"{system_prompt}\n\nUser Question:\n{user_question[1]}"
-    print("Generating SQL via LLM...")
+    logger.debug("Generating SQL via LLM...")
     try:
         llm_response = llm.invoke(metadata_prompt).content.strip()
         sql_match = re.search(r"```sql\n(.*?)\n```", llm_response, re.DOTALL)
         if sql_match:
             sql_query = sql_match.group(1).strip()
-            print(f" LLM-generated SQL:\n{sql_query}")
+            logger.debug(f" LLM-generated SQL:\n{sql_query}")
         else:
-            print(" LLM did not return a valid SQL query format.")
+            logger.debug(" LLM did not return a valid SQL query format.")
             conn.close()
             return jsonify({"message": "LLM did not return a valid SQL query format.", "result": {}}), 500
     except Exception as e:
-        print(f" Error generating SQL query: {e}")
+        logger.debug(f" Error generating SQL query: {e}")
         conn.close()
         return jsonify({"message": f"Error generating SQL query: {str(e)}", "result": {}}), 500
 
@@ -68,7 +85,7 @@ def query_api():
 
     # 6. Handle case where query returns no results
     if result_df.empty:
-        print(" Query returned no data.")
+        logger.debug(" Query returned no data.")
         conn.close()
         return jsonify({
             "message": "Query returned no data.",
@@ -78,9 +95,9 @@ def query_api():
 
     # 7. Ask LLM to explain the results in one sentence
     explanation_prompt = f"Explain the meaning of the following query results in one sentence:\n{result_df.head(10).to_json()}"
-    print(" Generating explanation from LLM...")
+    logger.debug(" Generating explanation from LLM...")
     explanation_response = llm.invoke(explanation_prompt).content.strip()
-    print(f"Explanation: {explanation_response}")
+    logger.debug(f"Explanation: {explanation_response}")
 
     # Close Snowflake connection
     conn.close()
@@ -89,13 +106,13 @@ def query_api():
     result_list = result_df.to_dict(orient="records")
 
     # 8. Generate an interactive HTML chart from query results
-    print("Attempting to generate an interactive HTML chart from query results...")
+    logger.debug("Attempting to generate an interactive HTML chart from query results...")
     chart_html = visual_generate(sql_query, result_list, explanation_response)
     if not chart_html:
-        print("No chart generated or chart generation failed.")
+        logger.debug("No chart generated or chart generation failed.")
         chart_html = ""
 
-    print("Returning final response with results and HTML chart (if any).")
+    logger.debug("Returning final response with results and HTML chart (if any).")
     return jsonify({
         "message": explanation_response,
         "result": result_list,
