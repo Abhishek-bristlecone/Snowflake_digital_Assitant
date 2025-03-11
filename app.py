@@ -63,7 +63,7 @@ def query_api():
     for items in user_question:
         logger.debug(items)
     # 4. Combine instructions + user question
-    metadata_prompt = f"{system_prompt}\n\nUser Question:\n{user_question[1]}"
+    metadata_prompt = f"{system_prompt}\n\nUser Question:\n{user_question[0][1]}"
     logger.debug("Generating SQL via LLM...")
     try:
         llm_response = llm.invoke(metadata_prompt).content.strip()
