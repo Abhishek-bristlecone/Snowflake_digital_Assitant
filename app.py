@@ -16,9 +16,6 @@ from utils import (
     llm
 )
 
-# Get host and port from environment variables
-SERVICE_HOST = os.getenv("SERVICE_HOST", "0.0.0.0")
-SERVICE_PORT = int(os.getenv("SERVICE_PORT", 5000))
 
 app = Flask(__name__)
 
@@ -105,5 +102,4 @@ def query_api():
     })
 
 if __name__ == '__main__':
-    print(f"Starting Flask server on {SERVICE_HOST}:{SERVICE_PORT}...")
-    app.run(host=SERVICE_HOST, port=SERVICE_PORT)
+    app.run(host="0.0.0.0", port=8080)
