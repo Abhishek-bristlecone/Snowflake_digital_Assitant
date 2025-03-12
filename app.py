@@ -121,7 +121,7 @@ def query_api():
     })
     # output_rows = [[row[0], string here]]
     logger.debug(f"Sending response: {response_data}")
-    response = make_response({"data": [[0, explanation_response, result_list]]})
+    response = make_response({"data": [[0, explanation_response]]})
     response.headers['Content-type'] = 'application/json'
     return response
 if __name__ == '__main__':
