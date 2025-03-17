@@ -1,28 +1,37 @@
 import os
-import re
-import base64
 import pandas as pd
 import snowflake.connector
 import plotly.express as px
 import plotly.io as pio
 from dotenv import load_dotenv
-# Use langchain_openai (or langchain_community if preferred)
 from langchain_openai import AzureChatOpenAI
-# from snowflake.snowpark import Session
-# from snowflake.snowpark.exceptions import *
+import logging
+import sys
 
-# 1. Load environment variables
-print("Loading environment variables...")
+# 🔹 Configure Logger
+def get_logger(logger_name):
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.DEBUG)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(logging.Formatter('%(name)s [%(asctime)s] [%(levelname)s] %(message)s'))
+    logger.addHandler(handler)
+    return logger
+
+logger = get_logger('snowflake-service')
+
+# 🔹 Load environment variables
+logger.debug("Loading environment variables...")
 load_dotenv()
 
-# 2. Retrieve Azure OpenAI credentials
+# 🔹 Retrieve Azure OpenAI credentials
 api_key = os.getenv("OPENAI_API_KEY")
 deployment_name = os.getenv("AZURE_DEPLOYMENT_NAME")
 api_version = os.getenv("AZURE_API_VERSION")
 azure_endpoint = os.getenv("AZURE_ENDPOINT")
 
-# 3. Initialize Azure OpenAI
-print("Initializing Azure OpenAI Model...")
+# 🔹 Initialize Azure OpenAI
+logger.debug("Initializing Azure OpenAI Model...")
 try:
     llm = AzureChatOpenAI(
         openai_api_key=api_key,
@@ -31,46 +40,58 @@ try:
         api_version=api_version,
         temperature=0.0
     )
-    print("✅ Azure OpenAI Model initialized successfully!")
+    logger.debug("✅ Azure OpenAI Model initialized successfully!")
 except Exception as e:
-    print(f" Failed to Initialize Azure OpenAI Model: {e}")
+    logger.error(f"🚨 Failed to Initialize Azure OpenAI Model: {e}")
     raise
 
-# 4. Retrieve Snowflake credentials
+# 🔹 Retrieve Snowflake credentials (Ensure no password for OAuth inside Snowflake)
 SNOWFLAKE_USER = os.getenv("SNOWFLAKE_USER")
-SNOWFLAKE_PASSWORD = os.getenv("SNOWFLAKE_PASSWORD")
+SNOWFLAKE_PASSWORD = os.getenv("SNOWFLAKE_PASSWORD")  # Used for local testing
 SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT")
 SNOWFLAKE_WAREHOUSE = os.getenv("SNOWFLAKE_WAREHOUSE")
 SNOWFLAKE_DATABASE = os.getenv("SNOWFLAKE_DATABASE")
 SNOWFLAKE_SCHEMA = os.getenv("SNOWFLAKE_SCHEMA")
 SNOWFLAKE_HOST = os.getenv("SNOWFLAKE_HOST")
 
-
-
 def get_login_token():
     """
-    Read the login token supplied automatically by Snowflake. These tokens
-    are short lived and should always be read right before creating any new connection.
+    Retrieve the short-lived Snowflake OAuth token if running inside Snowflake Container Services.
+    If running locally, return None.
     """
-    with open("/snowflake/session/token", "r") as f:
-        return f.read()
-
+    token_path = "/snowflake/session/token"
+    if os.path.exists(token_path):
+        try:
+            with open(token_path, "r") as f:
+                return f.read().strip()
+        except Exception as e:
+            logger.error(f"🚨 Error reading OAuth token: {e}")
+            raise
+    else:
+        logger.warning("⚠️ Running locally: No OAuth token file found. Falling back to password authentication.")
+        return None
 
 def get_connection_params():
     """
-    Construct Snowflake connection params from environment variables.
+    Dynamically selects authentication method:
+    - OAuth authentication when running inside Snowflake Container Services.
+    - Username/password authentication when running locally.
     """
-    if os.path.exists("/snowflake/session/token"):
+    token = get_login_token()
+
+    if token:
+        logger.debug("✅ Using OAuth authentication (inside Snowflake Container Services).")
         return {
             "account": SNOWFLAKE_ACCOUNT,
             "host": SNOWFLAKE_HOST,
             "authenticator": "oauth",
-            "token": get_login_token(),
+            "token": token,
             "warehouse": SNOWFLAKE_WAREHOUSE,
             "database": SNOWFLAKE_DATABASE,
             "schema": SNOWFLAKE_SCHEMA
         }
     else:
+        logger.debug("✅ Using username/password authentication (running locally).")
         return {
             "account": SNOWFLAKE_ACCOUNT,
             "host": SNOWFLAKE_HOST,
@@ -81,24 +102,19 @@ def get_connection_params():
             "schema": SNOWFLAKE_SCHEMA
         }
 
-
-
 def create_connection():
-    """Create a Snowflake connection."""
-    # print("Creating Snowflake connection...")
+    """Establish a Snowflake connection using the appropriate authentication method."""
     try:
         conn = snowflake.connector.connect(**get_connection_params())
-        # print("✅ Snowflake connection created successfully!")
+        logger.debug("✅ Snowflake connection established successfully!")
         return conn
-
-
     except Exception as e:
-        print(f"Snowflake Connection Failed: {e}")
+        logger.error(f"🚨 Snowflake Connection Failed: {e}")
         raise
 
 def get_snowflake_metadata(conn):
-    """Fetch Snowflake metadata."""
-    print("Fetching Snowflake metadata...")
+    """Fetch metadata from Snowflake."""
+    logger.debug("Fetching Snowflake metadata...")
     metadata_query = """
         SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
         FROM INFORMATION_SCHEMA.COLUMNS;
@@ -110,25 +126,25 @@ def get_snowflake_metadata(conn):
         cursor.close()
 
         if not metadata_rows:
-            raise ValueError("No metadata retrieved! Check permissions.")
+            logger.warning("⚠️ No metadata retrieved! Check Snowflake permissions.")
+            return {}
 
         metadata_df = pd.DataFrame(metadata_rows, columns=["TABLE_NAME", "COLUMN_NAME", "DATA_TYPE"])
         metadata_dict = (
             metadata_df.drop(columns=["TABLE_NAME"])
             .groupby(metadata_df["TABLE_NAME"], group_keys=False)
-            .apply(lambda x: {col: dtype for col, dtype in zip(x["COLUMN_NAME"], x["DATA_TYPE"])})
-            .to_dict()
+            .apply(lambda x: {col: dtype for col, dtype in zip(x["COLUMN_NAME"], x["DATA_TYPE"])}).
+            to_dict()
         )
-        print("Metadata retrieved successfully!")
+        logger.debug("✅ Metadata retrieved successfully!")
         return metadata_dict
     except Exception as e:
-        print(f" Error fetching metadata: {str(e)}")
+        logger.error(f"🚨 Error fetching metadata: {str(e)}")
         return None
 
 def query_snowflake(conn, sql_query):
     """Execute a SQL query in Snowflake."""
-    print("Executing SQL query:")
-    print(sql_query)
+    logger.debug(f"Executing SQL query: {sql_query}")
     try:
         cursor = conn.cursor()
         cursor.execute(sql_query)
@@ -137,13 +153,13 @@ def query_snowflake(conn, sql_query):
         cursor.close()
 
         if not result:
-            print("Query returned no data!")
+            logger.warning("⚠️ Query returned no data!")
             return pd.DataFrame()
 
-        print("SQL query executed successfully!")
+        logger.debug("✅ SQL query executed successfully!")
         return pd.DataFrame(result, columns=columns)
     except Exception as e:
-        print(f" SQL Execution Error: {e}")
+        logger.error(f"🚨 SQL Execution Error: {e}")
         return pd.DataFrame({"Error": [str(e)]})
 
 def visual_generate(query, data, response):
@@ -151,33 +167,24 @@ def visual_generate(query, data, response):
     Generate an interactive HTML chart from the query results.
     Returns an HTML string or an empty string if generation fails.
     """
-    print("Attempting to generate interactive HTML visualization...")
+    logger.debug("Attempting to generate interactive HTML visualization...")
     try:
-        # Convert data to a DataFrame
         df = pd.DataFrame(data)
-        # If no data or fewer than 2 columns, skip chart generation
         if df.empty or len(df.columns) < 2:
-            print(" Not enough data to generate a chart.")
+            logger.warning("⚠️ Not enough data to generate a chart.")
             return ""
         
-        # Example: Generate a bar chart using Plotly Express
         fig = px.bar(df, x=df.columns[0], y=df.columns[1], title=response)
-
-        # Customize layout with your theme
         fig.update_layout(
             plot_bgcolor="#2B2C2E",
             paper_bgcolor="#2B2C2E",
             font=dict(color="#FFFFFF"),
         )
-
-        # Generate an interactive HTML string for the chart (no Kaleido required)
         html_str = pio.to_html(fig, full_html=False)
-        print(" HTML visualization generated successfully!")
+        logger.debug("✅ HTML visualization generated successfully!")
         return html_str
-
     except Exception as e:
-        print(f"HTML chart generation error: {e}")
+        logger.error(f"🚨 HTML chart generation error: {e}")
         return ""
 
-# Export llm so it can be imported in app.py
 __all__ = ["create_connection", "get_snowflake_metadata", "query_snowflake", "visual_generate", "llm"]
