@@ -38,40 +38,44 @@ app = Flask(__name__)
 # Enable CORS for all domains (Required for Snowflake)
 CORS(app)
 
-# ✅ Add a Health Check Endpoint
+# ✅ Health Check Endpoint
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({"status": "running"}), 200
 
-# ✅ Ensure Main API Works
-@app.route('/getdata', methods=['POST'])
+# ✅ API to Query Snowflake (Supports both GET and POST)
+@app.route('/getdata', methods=['GET', 'POST'])
 def query_api():
-    logger.debug("Received POST request on /getdata")
+    logger.debug("Received request on /getdata")
 
-    # 1. Parse user input
-    data = request.get_json()
-    user_question = data.get("data")
-    
+    # Determine if the request is GET or POST
+    if request.method == 'POST':
+        data = request.get_json()
+        user_question = data.get("data") if data else None
+    elif request.method == 'GET':
+        user_question = request.args.get("data")  # Get query param ?data=
+
     if not user_question:
+        logger.warning("⚠️ No query provided in request")
         return jsonify({"message": "No user_question provided", "result": {}}), 400
 
-    # 2. Create Snowflake connection
+    # 1. Create Snowflake connection
     conn = create_connection()
 
-    # 3. Retrieve metadata
+    # 2. Retrieve metadata
     snowflake_metadata = get_snowflake_metadata(conn)
     if not snowflake_metadata:
         conn.close()
         return jsonify({"message": "Metadata retrieval failed.", "result": {}}), 500
 
-    # 4. Read system instructions (prompt) from file
+    # 3. Read system instructions (prompt) from file
     try:
         with open("instructions.txt", "r", encoding="utf-8") as file:
             system_prompt = file.read().strip()
     except FileNotFoundError:
         return jsonify({"message": "Instructions file not found"}), 500
 
-    # 5. Generate SQL using LLM
+    # 4. Generate SQL using LLM
     metadata_prompt = f"{system_prompt}\n\nUser Question:\n{user_question}"
     try:
         llm_response = llm.invoke(metadata_prompt).content.strip()
@@ -85,7 +89,7 @@ def query_api():
         conn.close()
         return jsonify({"message": f"Error generating SQL: {str(e)}", "result": {}}), 500
 
-    # 6. Execute SQL in Snowflake
+    # 5. Execute SQL in Snowflake
     result_df = query_snowflake(conn, sql_query)
     conn.close()
 
@@ -96,11 +100,11 @@ def query_api():
             "chart_html": ""
         }), 200
 
-    # 7. Generate an explanation from LLM
+    # 6. Generate an explanation from LLM
     explanation_prompt = f"Explain these results: {result_df.head(10).to_json()}"
     explanation_response = llm.invoke(explanation_prompt).content.strip()
 
-    # 8. Generate visualization
+    # 7. Generate visualization
     chart_html = visual_generate(sql_query, result_df.to_dict(orient="records"), explanation_response)
 
     return jsonify({
@@ -108,8 +112,10 @@ def query_api():
         "result": result_df.to_dict(orient="records"),
         "chart_html": chart_html
     })
-port = int(os.getenv("SERVER_PORT", 8080))
-# ✅ Make sure Flask binds to all interfaces
-if __name__ == '__main__':
 
+# Set dynamic port from environment or default to 8080
+port = int(os.getenv("SERVER_PORT", 8080))
+
+# ✅ Ensure Flask binds to all interfaces
+if __name__ == '__main__':
     app.run(host="0.0.0.0", port=port, debug=True)
